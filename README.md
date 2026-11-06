@@ -22,6 +22,8 @@ pipx runpip cbpi4 install git+https://github.com/zzorrro/cbpi4-ModbusActor.git
 Проверьте, видит ли система адаптер
 ls -l /dev/ttyUSB*
 
+По умолчания задается порт: /dev/ttyUSB0
+
 Если порт называется иначе (например, ttyUSB1), укажите его в настройках.
 Также попробуйте физически переподключить USB-адаптер или перезагрузить систему:
 sudo reboot
