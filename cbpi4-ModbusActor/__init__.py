@@ -1,119 +1,118 @@
-# -*- coding: utf-8 -*-
 import asyncio
 import logging
 from cbpi.api import *
+from cbpi.api.base import CBPiBase
+from cbpi.api.dataclasses import Actor, Props
 from pymodbus.client import ModbusSerialClient
-from pymodbus.exceptions import ModbusException, ConnectionException
+from pymodbus.constants import Endian
+from pymodbus.payload import BinaryPayloadBuilder
 
 logger = logging.getLogger(__name__)
 
 @parameters([
-    Property.Text(label="Serial Port", configurable=True, default_value="/dev/ttyUSB0", description="RS485 порт (например, /dev/ttyUSB0)"),
-    Property.Number(label="Baudrate", configurable=True, default_value=4800, description="Скорость передачи (обычно 4800, 9600 или 115200)"),
-    Property.Number(label="Slave ID", configurable=True, default_value=1, description="Адрес Modbus устройства (1-254)"),
-    Property.Number(label="Register Address", configurable=True, default_value=0, description="Адрес регистра (0=OUT0, 1=OUT1, 2=OUT2, 3=OUT3)"),
-    Property.Number(label="Max Value", configurable=True, default_value=4095, description="Макс. значение (4095 для 12-бит, 10000 для 16-бит)")
+    Property.Text(label="Serial Port", configurable=True, default_value="/dev/ttyUSB0", description="Serial port (e.g., /dev/ttyUSB0)"),
+    Property.Number(label="Baudrate", configurable=True, default_value=4800, description="Baudrate (4800, 9600, 19200, etc.)"),
+    Property.Number(label="Slave ID", configurable=True, default_value=1, description="Modbus Slave ID (1-254)"),
+    Property.Number(label="Register Address", configurable=True, default_value=0, description="Register address to write to"),
+    Property.Number(label="Max Value", configurable=True, default_value=4095, description="Max value for 100% power (e.g., 4095 for 12-bit)"),
 ])
-class ModbusActor(CBPiActor):
-
-    def __init__(self, cbpi):
-        super().__init__(cbpi)
+class ModbusActor(CBPiBase):
+    
+    def __init__(self, cbpi, id, *args, **kwargs):
+        super().__init__(cbpi, id, *args, **kwargs)
         self.client = None
-        self.current_power = 0
-        self.is_connected = False
+        self.power = 0
+        self.state = False
         
-        # Читаем настройки из интерфейса
-        self.port = self.props.get("Serial Port", "/dev/ttyUSB0")
-        self.baudrate = int(self.props.get("Baudrate", 4800))
-        self.slave_id = int(self.props.get("Slave ID", 1))
-        self.register = int(self.props.get("Register Address", 0))
-        self.max_value = int(self.props.get("Max Value", 4095))
-
-    async def start(self):
-        """Инициализация подключения при старте системы"""
+    async def on_start(self):
+        """Инициализация при запуске CBPi4"""
         try:
+            self.serial_port = self.props.get("Serial Port", "/dev/ttyUSB0")
+            self.baudrate = int(self.props.get("Baudrate", 4800))
+            self.slave_id = int(self.props.get("Slave ID", 1))
+            self.register = int(self.props.get("Register Address", 0))
+            self.max_value = int(self.props.get("Max Value", 4095))
+            
+            logger.info(f"ModbusActor {self.id} initialized: {self.serial_port}@{self.baudrate}, Slave={self.slave_id}, Register={self.register}, MaxValue={self.max_value}")
+            
+            # Инициализируем Modbus клиент
             self.client = ModbusSerialClient(
-                method='rtu',
-                port=self.port,
+                port=self.serial_port,
                 baudrate=self.baudrate,
-                timeout=1,
-                stopbits=1,
                 bytesize=8,
-                parity='N'
+                parity='N',
+                stopbits=1,
+                timeout=1
             )
             
             if self.client.connect():
-                self.is_connected = True
-                logger.info(f"ModbusActor connected to {self.port}")
-                self.cbpi.notify("ModbusActor", f"Connected to {self.port}", NotificationType.SUCCESS)
+                logger.info(f"Modbus client connected to {self.serial_port}")
             else:
-                self.is_connected = False
-                logger.error(f"Failed to connect to {self.port}")
-                self.cbpi.notify("ModbusActor", f"Failed to connect to {self.port}", NotificationType.ERROR)
+                logger.error(f"Failed to connect to Modbus device on {self.serial_port}")
+                
         except Exception as e:
-            self.is_connected = False
-            logger.error(f"ModbusActor start error: {e}")
-            self.cbpi.notify("ModbusActor", f"Start error: {str(e)}", NotificationType.ERROR)
-
-    async def stop(self):
-        """Безопасное отключение при остановке"""
-        await self.set_power(0)
+            logger.error(f"Error initializing ModbusActor {self.id}: {e}")
+    
+    async def on_stop(self):
+        """Остановка при выключении CBPi4"""
         if self.client:
-            try:
-                self.client.close()
-                self.is_connected = False
-            except Exception as e:
-                logger.error(f"Error closing Modbus connection: {e}")
-
+            self.client.close()
+            logger.info(f"ModbusActor {self.id} stopped")
+    
+    async def on(self):
+        """Включение актора (100% мощность)"""
+        try:
+            if self.client and self.client.connected:
+                await self.set_power(100)
+                self.state = True
+                logger.info(f"ModbusActor {self.id} turned ON")
+        except Exception as e:
+            logger.error(f"Error turning on ModbusActor {self.id}: {e}")
+    
+    async def off(self):
+        """Выключение актора (0% мощность)"""
+        try:
+            if self.client and self.client.connected:
+                await self.set_power(0)
+                self.state = False
+                logger.info(f"ModbusActor {self.id} turned OFF")
+        except Exception as e:
+            logger.error(f"Error turning off ModbusActor {self.id}: {e}")
+    
     async def set_power(self, power):
-        """Главный метод: преобразование % в значение регистра и отправка"""
-        self.current_power = power
-        
-        # Преобразуем 0-100% в диапазон регистра (например, 0-4095)
-        modbus_value = int((power / 100.0) * self.max_value)
-        modbus_value = max(0, min(modbus_value, self.max_value)) # Защита от выхода за границы
-        
-        logger.debug(f"ModbusActor: power={power}% -> register value={modbus_value}")
-        
-        if self.client and self.is_connected:
-            try:
-                result = self.client.write_register(
-                    address=self.register,
-                    value=modbus_value,
-                    slave=self.slave_id
-                )
+        """Установка мощности (0-100%)"""
+        try:
+            self.power = float(power)
+            # Конвертируем процент в значение регистра
+            register_value = int((self.power / 100.0) * self.max_value)
+            
+            if self.client and self.client.connected:
+                # Записываем значение в регистр
+                builder = BinaryPayloadBuilder(byteorder=Endian.Big, wordorder=Endian.Big)
+                builder.add_16bit_int(register_value)
+                payload = builder.build()
+                
+                # Записываем holding register
+                result = self.client.write_register(self.register, register_value, slave=self.slave_id)
                 
                 if result.isError():
-                    logger.error(f"Modbus write error: {result}")
-                    self.cbpi.notify("ModbusActor", "Write error", NotificationType.ERROR)
-                    await self.set_power(0) # Безопасность: выключаем при ошибке
-            except (ModbusException, ConnectionException) as e:
-                logger.error(f"Modbus connection lost: {e}")
-                self.is_connected = False
-                self.cbpi.notify("ModbusActor", "Connection lost", NotificationType.ERROR)
-                await self.set_power(0) # Безопасность: выключаем при обрыве связи
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}")
-                await self.set_power(0)
-        else:
-            logger.warning("ModbusActor not connected")
-
-    async def on(self, power=0):
-        """Включение на полную мощность"""
-        logger.info("ModbusActor: turning ON (100%)")
-        await self.set_power(100)
-
-    async def off(self):
-        """Выключение"""
-        logger.info("ModbusActor: turning OFF (0%)")
-        await self.set_power(0)
+                    logger.error(f"Modbus write error for actor {self.id}")
+                else:
+                    logger.debug(f"ModbusActor {self.id}: Set power {self.power}% -> Register value {register_value}")
+                    
+        except Exception as e:
+            logger.error(f"Error setting power for ModbusActor {self.id}: {e}")
     
-    async def run(self):
-        """Пустой метод, требуется интерфейсом CBPiActor"""
-        pass
+    async def get_power(self):
+        """Получение текущей мощности"""
+        return self.power
+    
+    def get_state(self):
+        """Получение состояния актора"""
+        return self.state
 
 
 def setup(cbpi):
-    """Регистрация плагина в системе"""
+    """Регистрация плагина при старте CBPi4"""
     cbpi.plugin.register("ModbusActor", ModbusActor)
-    logger.info("ModbusActor plugin registered successfully")
+    logger.info("ModbusActor plugin loaded")
