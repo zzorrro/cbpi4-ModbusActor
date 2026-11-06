@@ -88,8 +88,8 @@ class ModbusActor(CBPiActor):
         if self.client and self.client.connected:
             register_value = int((self.power / 100.0) * self.max_value)
             try:
-                # ИСПРАВЛЕНО: используем позиционный аргумент slave вместо unit
-                response = self.client.write_register(self.register, register_value, slave=self.slave_id)
+                # ИСПРАВЛЕНО: используем device_id вместо slave или unit
+                response = self.client.write_register(self.register, register_value, device_id=self.slave_id)
                 if response.isError():
                     logger.warning(f"Modbus write error for {self.id} (Normal if hardware is unplugged)") 
                 else:
