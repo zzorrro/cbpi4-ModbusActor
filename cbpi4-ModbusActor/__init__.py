@@ -2,10 +2,6 @@ import asyncio
 import logging
 from cbpi.api import *
 from cbpi.api.base import CBPiBase
-from cbpi.api.dataclasses import Actor, Props
-from pymodbus.client import ModbusSerialClient
-from pymodbus.constants import Endian
-from pymodbus.payload import BinaryPayloadBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +31,9 @@ class ModbusActor(CBPiBase):
             
             logger.info(f"ModbusActor {self.id} initialized: {self.serial_port}@{self.baudrate}, Slave={self.slave_id}, Register={self.register}, MaxValue={self.max_value}")
             
-            # Инициализируем Modbus клиент
+            # Инициализируем Modbus клиент (pymodbus 3.x+)
+            from pymodbus.client import ModbusSerialClient
+            
             self.client = ModbusSerialClient(
                 port=self.serial_port,
                 baudrate=self.baudrate,
@@ -87,12 +85,7 @@ class ModbusActor(CBPiBase):
             register_value = int((self.power / 100.0) * self.max_value)
             
             if self.client and self.client.connected:
-                # Записываем значение в регистр
-                builder = BinaryPayloadBuilder(byteorder=Endian.Big, wordorder=Endian.Big)
-                builder.add_16bit_int(register_value)
-                payload = builder.build()
-                
-                # Записываем holding register
+                # Записываем значение в регистр (pymodbus 3.x+)
                 result = self.client.write_register(self.register, register_value, slave=self.slave_id)
                 
                 if result.isError():
