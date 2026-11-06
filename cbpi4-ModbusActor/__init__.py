@@ -38,7 +38,6 @@ class ModbusActor(CBPiActor):
                 logger.error("Cannot initialize Modbus: pymodbus library is missing")
                 return
 
-            # Небольшая пауза, чтобы не блокировать event loop
             await asyncio.sleep(0.1)
 
             self.client = ModbusSerialClient(
@@ -47,7 +46,7 @@ class ModbusActor(CBPiActor):
                 bytesize=8,
                 parity='N',
                 stopbits=1,
-                timeout=1 # Жесткий таймаут, чтобы не вешать интерфейс
+                timeout=1
             )
             
             if self.client.connect():
@@ -75,7 +74,6 @@ class ModbusActor(CBPiActor):
         if self.power < 0: self.power = 0
         if self.power > 100: self.power = 100
 
-        # Попытка переподключения, если порт был потерян
         if self.client is None or not self.client.connected:
             try:
                 if self.client: 
@@ -90,10 +88,9 @@ class ModbusActor(CBPiActor):
         if self.client and self.client.connected:
             register_value = int((self.power / 100.0) * self.max_value)
             try:
-                # ВАЖНО: в pymodbus 3.x используется аргумент 'unit', а не 'slave'
-                response = self.client.write_register(self.register, register_value, unit=self.slave_id)
+                # ИСПРАВЛЕНО: используем позиционный аргумент slave вместо unit
+                response = self.client.write_register(self.register, register_value, slave=self.slave_id)
                 if response.isError():
-                    # Используем warning, чтобы вы точно видели это в journalctl
                     logger.warning(f"Modbus write error for {self.id} (Normal if hardware is unplugged)") 
                 else:
                     logger.info(f"ModbusActor {self.id}: Power {self.power}% -> Register {register_value}")
@@ -110,7 +107,6 @@ class ModbusActor(CBPiActor):
             await asyncio.sleep(1)
 
     async def on_stop(self):
-        """Корректное закрытие порта при остановке (предотвращает Errno 11)"""
         if self.client:
             try:
                 self.client.close()
