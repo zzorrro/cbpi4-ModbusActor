@@ -26,7 +26,7 @@ class ModbusActor(CBPiActor):
         self.state = False
 
     async def on_start(self):
-        """Инициализация при запуске. Делаем её максимально быстрой."""
+        """Инициализация. Закрываем старый порт, если он был, чтобы избежать Exclusive Lock."""
         try:
             self.serial_port = self.props.get("Serial Port", "/dev/ttyUSB0")
             self.baudrate = int(self.props.get("Baudrate", 4800))
@@ -38,8 +38,14 @@ class ModbusActor(CBPiActor):
                 logger.error("Cannot initialize Modbus: pymodbus library is missing")
                 return
 
-            # Небольшая пауза, чтобы не блокировать asyncio event loop при открытии порта
-            await asyncio.sleep(0.1)
+            # КРИТИЧНО: Закрываем предыдущее подключение, если оно было
+            if self.client is not None:
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+
+            await asyncio.sleep(0.2) # Даем ОС время освободить порт
 
             self.client = ModbusSerialClient(
                 port=self.serial_port,
@@ -47,19 +53,16 @@ class ModbusActor(CBPiActor):
                 bytesize=8,
                 parity='N',
                 stopbits=1,
-                timeout=1 # Жесткий таймаут в 1 секунду, чтобы не вешать интерфейс
+                timeout=1
             )
             
-            # Пытаемся подключиться. Если порт "тупит", таймаут в 1 сек спасет интерфейс от зависания
             if self.client.connect():
                 logger.info(f"ModbusActor {self.id} connected to {self.serial_port}")
             else:
-                logger.warning(f"ModbusActor {self.id} could not connect to {self.serial_port} (Device may be disconnected)")
+                logger.warning(f"ModbusActor {self.id} could not connect to {self.serial_port}")
                 
         except Exception as e:
             logger.error(f"Error initializing ModbusActor {self.id}: {e}")
-            # Важно: не выбрасываем исключение дальше, чтобы не ронять сохранение котла
-            self.client = None
 
     async def on(self, power=None):
         if power is not None:
@@ -77,12 +80,25 @@ class ModbusActor(CBPiActor):
         if self.power < 0: self.power = 0
         if self.power > 100: self.power = 100
 
+        # Пытаемся переподключиться, если связь оборвалась
+        if self.client is None or not self.client.connected:
+            try:
+                if self.client: self.client.close()
+                self.client = ModbusSerialClient(
+                    port=self.serial_port, baudrate=self.baudrate, bytesize=8, parity='N', stopbits=1, timeout=1
+                )
+                self.client.connect()
+            except Exception as e:
+                logger.debug(f"Reconnection failed: {e}")
+
         if self.client and self.client.connected:
             register_value = int((self.power / 100.0) * self.max_value)
             try:
                 response = self.client.write_register(self.register, register_value, slave=self.slave_id)
                 if response.isError():
-                    logger.debug(f"Modbus write error for actor {self.id} (Normal if device is unplugged)")
+                    logger.debug(f"Modbus write error (Device may be unplugged)")
+                else:
+                    logger.info(f"ModbusActor {self.id}: Power {self.power}% -> Register {register_value}")
             except Exception as e:
                 logger.debug(f"Modbus write exception: {e}")
         
@@ -94,6 +110,15 @@ class ModbusActor(CBPiActor):
     async def run(self):
         while self.running:
             await asyncio.sleep(1)
+
+    async def on_stop(self):
+        """Корректное закрытие порта при остановке"""
+        if self.client:
+            try:
+                self.client.close()
+            except:
+                pass
+            logger.info(f"ModbusActor {self.id} stopped and port closed")
 
 
 def setup(cbpi):
