@@ -17,11 +17,11 @@
 Установка библиотек в окружение CBPI4
 pipx runpip cbpi4 install pymodbus pyserial
 
-Установка плагина из этого репозитория
-pipx runpip cbpi4 install git+https://github.com/zzorrro/cbpi4-ModbusActor.git
-
 # Добавьте текущего пользователя в группу dialout (имеющую доступ к COM-портам)
 sudo usermod -a -G dialout $USER
+
+Установка плагина из этого репозитория
+pipx runpip cbpi4 install git+https://github.com/zzorrro/cbpi4-ModbusActor.git
 
 Проверьте, видит ли система адаптер
 ls -l /dev/ttyUSB*
