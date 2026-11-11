@@ -14,6 +14,7 @@
 ### Установка и отладка
 ```bash
 
+Установка зависимостей
 pipx runpip cbpi4 install pymodbus pyserial
 
 Установка плагина из этого репозитория
