@@ -87,17 +87,22 @@ class ModbusActor(CBPiActor):
 
         if self.client and self.client.connected:
             register_value = int((self.power / 100.0) * self.max_value)
-            try:
-                # ИСПРАВЛЕНО: используем device_id вместо slave или unit
-                response = self.client.write_register(self.register, register_value, device_id=self.slave_id)
-                if response.isError():
-                    logger.warning(f"Modbus write error for {self.id} (Normal if hardware is unplugged)") 
-                else:
-                    logger.info(f"ModbusActor {self.id}: Power {self.power}% -> Register {register_value}")
-            except Exception as e:
-                logger.warning(f"Modbus write exception: {e}")
+            await self._write_register(register_value)
         
         await self.cbpi.actor.actor_update(self.id, self.power)
+
+    async def _write_register(self, value):
+        """Вспомогательный метод для записи значения в регистр с проверкой ответа"""
+        try:
+            response = self.client.write_register(self.register, value, device_id=self.slave_id)
+            if response is None:
+                logger.warning(f"Modbus write returned None for actor {self.id}")
+            elif response.isError():
+                logger.warning(f"Modbus write error for actor {self.id} (Normal if hardware is unplugged)")
+            else:
+                logger.info(f"ModbusActor {self.id}: Wrote {value} to register {self.register}")
+        except Exception as e:
+            logger.warning(f"Modbus write exception: {e}")
 
     def get_state(self):
         return self.state
@@ -107,6 +112,16 @@ class ModbusActor(CBPiActor):
             await asyncio.sleep(1)
 
     async def on_stop(self):
+        """Безопасная остановка: сначала выключить выход (записать 0), потом закрыть порт"""
+        if self.client and self.client.connected:
+            try:
+                # Принудительно записываем 0 в регистр, чтобы гарантированно выключить ТЭН/частотник
+                await self._write_register(0)
+                logger.info(f"ModbusActor {self.id}: Output forced to 0 on stop")
+            except Exception as e:
+                logger.warning(f"Failed to write 0 on stop: {e}")
+        
+        # Теперь закрываем порт
         if self.client:
             try:
                 self.client.close()
