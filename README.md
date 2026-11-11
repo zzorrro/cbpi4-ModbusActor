@@ -20,6 +20,9 @@ pipx runpip cbpi4 install pymodbus pyserial
 Установка плагина из этого репозитория
 pipx runpip cbpi4 install git+https://github.com/zzorrro/cbpi4-ModbusActor.git
 
+# Добавьте текущего пользователя в группу dialout (имеющую доступ к COM-портам)
+sudo usermod -a -G dialout $USER (Ваше имя пользователя)
+
 Проверьте, видит ли система адаптер
 ls -l /dev/ttyUSB*
 
@@ -27,22 +30,3 @@ ls -l /dev/ttyUSB*
 
 Если порт называется иначе (например, ttyUSB1), укажите его в настройках.
 
-Ошибка: Could not exclusively lock port
-
-# Найдите процесс, удерживающий порт
-sudo fuser /dev/ttyUSB0
-
-# Остановите CBPi4 и принудительно освободите порт
-sudo systemctl stop craftbeerpi.service
-sudo fuser -k /dev/ttyUSB0
-
-# Запустите CBPi4 заново
-sudo systemctl start craftbeerpi.service
-
-Ошибка: Permission denied
-
-# Добавьте текущего пользователя в группу dialout (имеющую доступ к COM-портам)
-sudo usermod -a -G dialout $USER (Ваше имя пользователя)
-
-# Перезагрузите систему для применения прав
-sudo reboot
