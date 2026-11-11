@@ -35,7 +35,7 @@ ls -l /dev/ttyUSB*
 Для правильной инициализации нужно добавить в настройки уникальное имя порта.
 
 Узнать уникальное имя порта
- ls -l /dev/serial/by-id/
+ls -l /dev/serial/by-id/
 
 Вы увидите вывод вроде этого:
 lrwxrwxrwx 1 root root 13 ноя  6 21:00 usb-1a86_USB_Serial-if00-port0 -> ../../ttyUSB1
