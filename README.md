@@ -42,7 +42,7 @@ sudo systemctl start craftbeerpi.service
 Ошибка: Permission denied
 
 # Добавьте текущего пользователя в группу dialout (имеющую доступ к COM-портам)
-sudo usermod -a -G dialout $USER
+sudo usermod -a -G dialout $USER (Ваше имя пользователя)
 
 # Перезагрузите систему для применения прав
 sudo reboot
