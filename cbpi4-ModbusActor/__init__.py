@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from cbpi.api import CBPiActor, Property, parameters
+from cbpi.api import CBPiActor, Property, parameters, action
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,11 @@ class ModbusActor(CBPiActor):
                 logger.info(f"ModbusActor {self.id}: Wrote {value} to register {self.register}")
         except Exception as e:
             logger.warning(f"Modbus write exception: {e}")
+
+    @action(key="Set Power", parameters=[Property.Number(label="Power", configurable=True, description="Power Setting [0-100]")])
+    async def setpower(self, Power=100, **kwargs):
+        """Окно 'Set Power' в интерфейсе CBPi4"""
+        await self.set_power(Power)
 
     def get_state(self):
         return self.state
