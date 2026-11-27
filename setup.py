@@ -4,7 +4,7 @@ setup(
     name='cbpi4-ModbusActor',
     version='1.0.3',
     description='CBPi4 Actor for RS485 Modbus RTU (0-10V) control',
-    author='Sammy Brewery',
+    author='zzorrro',
     url='https://github.com/zzorrro/cbpi4-ModbusActor',
     license='MIT',
     packages=find_packages(),
